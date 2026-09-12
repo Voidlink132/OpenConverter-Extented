@@ -1,5 +1,10 @@
 package com.openconverter.app.ui.home
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -16,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -30,8 +36,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -44,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -196,6 +204,21 @@ fun HomeScreen(
                     onClick = { pickFiles.launch(arrayOf("audio/*", "*/*")) },
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                AutoFetchToggle(
+                    checked = state.autoFetchEnabled,
+                    onCheckedChange = { enabled ->
+                        if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+                            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                data = Uri.parse("package:${ctx.packageName}")
+                            }
+                            ctx.startActivity(intent)
+                        } else {
+                            viewModel.toggleAutoFetch(enabled)
+                        }
+                    }
+                )
+
                 Spacer(Modifier.height(8.dp))
             }
             
@@ -254,11 +277,30 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    PillButton(
-                        text = stringResource(R.string.home_pick_files),
-                        onClick = { pickFiles.launch(arrayOf("audio/*", "*/*")) },
-                        modifier = Modifier.fillMaxWidth(0.6f)
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        PillButton(
+                            text = stringResource(R.string.home_pick_files),
+                            onClick = { pickFiles.launch(arrayOf("audio/*", "*/*")) },
+                            modifier = Modifier.fillMaxWidth(0.6f)
+                        )
+
+                        AutoFetchToggle(
+                            checked = state.autoFetchEnabled,
+                            onCheckedChange = { enabled ->
+                                if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+                                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                        data = Uri.parse("package:${ctx.packageName}")
+                                    }
+                                    ctx.startActivity(intent)
+                                } else {
+                                    viewModel.toggleAutoFetch(enabled)
+                                }
+                            }
+                        )
+                    }
                 }
             } else {
                 LazyColumn(
@@ -338,6 +380,46 @@ fun HomeScreen(
                 Spacer(Modifier.height(12.dp))
             }
         }
+    }
+}
+
+@Composable
+fun AutoFetchToggle(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = stringResource(R.string.home_auto_fetch),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.primary,
+                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
+                uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+            ),
+            thumbContent = {
+                Box(
+                    modifier = Modifier
+                        .size(SwitchDefaults.IconSize)
+                        .clip(CircleShape)
+                )
+            }
+        )
     }
 }
 

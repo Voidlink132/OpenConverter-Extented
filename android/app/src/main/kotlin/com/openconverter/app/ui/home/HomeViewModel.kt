@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.os.IBinder
 import android.provider.DocumentsContract
 import androidx.core.content.ContextCompat
@@ -15,11 +17,13 @@ import com.openconverter.app.engine.ProgressEvent
 import com.openconverter.app.saf.SafAdapter
 import com.openconverter.app.service.ConversionService
 import com.openconverter.app.ui.components.FileState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 data class FileEntry(
     val uri: String,
@@ -43,6 +47,7 @@ data class HomeUiState(
      *  private-dir on Android 14). When non-null, Start is blocked and the
      *  Output-folder row surfaces this message. */
     val folderError: String? = null,
+    val autoFetchEnabled: Boolean = false,
 )
 
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
@@ -83,6 +88,60 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
         _state.update { it.copy(files = entries) }
     }
+
+    fun toggleAutoFetch(enabled: Boolean) {
+        _state.update { it.copy(autoFetchEnabled = enabled) }
+        if (enabled) {
+            scanLocalMusic()
+        }
+    }
+
+    private fun scanLocalMusic() {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                if (!Environment.isExternalStorageManager()) {
+                    // We can't request activity from ViewModel easily,
+                    // but the UI will handle the switch state and permission check.
+                    return@launch
+                }
+            }
+
+            val paths = listOf(
+                "/storage/emulated/0/Download/netease/cloudmusic/Music/",
+                "/storage/emulated/0/Download/kgmusic/",
+                "/storage/emulated/0/Music/qqmusic/"
+            )
+            val audioExtensions = setOf(
+                "mp3", "flac", "wav", "m4a", "ogg", "aac",
+                "ncm", "kwm", "kgm", "kgma", "vpr", "kgg", "mgg", "mgg1", "bkc"
+            )
+
+            val newEntries = mutableListOf<FileEntry>()
+            paths.forEach { path ->
+                val dir = File(path)
+                if (dir.exists() && dir.isDirectory) {
+                    dir.listFiles()?.forEach { file ->
+                        if (file.isFile && file.extension.lowercase() in audioExtensions) {
+                            newEntries.add(FileEntry(
+                                uri = Uri.fromFile(file).toString(),
+                                displayName = file.name,
+                                sizeBytes = file.length()
+                            ))
+                        }
+                    }
+                }
+            }
+
+            if (newEntries.isNotEmpty()) {
+                _state.update { s ->
+                    val existingUris = s.files.map { it.uri }.toSet()
+                    val filteredNew = newEntries.filter { it.uri !in existingUris }
+                    s.copy(files = s.files + filteredNew)
+                }
+            }
+        }
+    }
+
     fun setOutputFolder(uri: Uri) {
         val ctx = getApplication<Application>()
         val takeResult = runCatching {
@@ -177,6 +236,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 files = emptyList(),
                 running = false,
                 showControlsSheet = false,
+                autoFetchEnabled = false,
             )
         }
     }

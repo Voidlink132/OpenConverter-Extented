@@ -7,6 +7,7 @@
 
     <!-- HomeScreen -->
     <string name="home_pick_files">Add files</string>
+    <string name="home_auto_fetch">Auto fetch music</string>
     <string name="home_pick_folder">Output folder</string>
     <string name="home_target_format">Target format</string>
     <string name="home_bitrate">Bitrate</string>

@@ -7,6 +7,7 @@
 
     <!-- HomeScreen -->
     <string name="home_pick_files">添加文件</string>
+    <string name="home_auto_fetch">自动获取音乐文件</string>
     <string name="home_pick_folder">输出目录</string>
     <string name="home_target_format">目标格式</string>
     <string name="home_bitrate">比特率</string>
