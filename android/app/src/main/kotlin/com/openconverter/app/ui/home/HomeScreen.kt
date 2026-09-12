@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -151,8 +152,6 @@ fun HomeScreen(
         bottomBar = {
             val s = state
             if (s.files.isNotEmpty()) {
-                // Single-button tri-state CTA: Start → Cancel → Clear
-                // Hide entirely when no files queued (the empty-state message handles that).
                 Box(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                 ) {
@@ -164,14 +163,14 @@ fun HomeScreen(
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
-                        s.files.any { it.state == FileState.Pending } -> {
+                        s.files.any { it.state == FileState.Pending && it.isSelected } -> {
                             GreenCta(
                                 text = stringResource(R.string.start_conversion),
                                 onClick = { viewModel.start(ctx) },
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
-                        s.files.any { it.state == FileState.Failed } -> {
+                        s.files.any { it.state == FileState.Failed && it.isSelected } -> {
                             GreenCta(
                                 text = stringResource(R.string.retry_failed),
                                 onClick = { viewModel.retryFailed(ctx) },
@@ -179,7 +178,6 @@ fun HomeScreen(
                             )
                         }
                         else -> {
-                            // All done → single Clear button
                             androidx.compose.material3.OutlinedButton(
                                 onClick = { viewModel.clearFiles() },
                                 modifier = Modifier.fillMaxWidth(),
@@ -222,7 +220,6 @@ fun HomeScreen(
                 Spacer(Modifier.height(8.dp))
             }
             
-            // Configuration Card Group
             androidx.compose.material3.Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = androidx.compose.material3.CardDefaults.cardColors(
@@ -232,7 +229,6 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column {
-                    // Output folder row
                     val folderValue = state.folderError
                         ?: state.outputFolderName
                         ?: stringResource(R.string.home_no_folder)
@@ -249,7 +245,6 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
                     
-                    // Format / bitrate row
                     val fmtLabel = state.targetFormat.uppercase()
                     val brLabel = state.bitrate ?: stringResource(R.string.home_bitrate_lossless)
                     SummaryRow(
@@ -303,6 +298,35 @@ fun HomeScreen(
                     }
                 }
             } else {
+                val allSelected = state.files.all { it.isSelected }
+                val someSelected = state.files.any { it.isSelected }
+                
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.toggleAllSelection(!allSelected) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = allSelected,
+                        onCheckedChange = { viewModel.toggleAllSelection(it) },
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = if (allSelected) "取消全选" else "全选",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = "已选 ${state.files.count { it.isSelected }} / ${state.files.size}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -314,6 +338,9 @@ fun HomeScreen(
                             state = f.state,
                             percent = f.percent,
                             error = f.error,
+                            isSelected = f.isSelected,
+                            onSelectionChange = { selected -> viewModel.toggleSelection(f.uri, selected) },
+                            source = f.source
                         )
                     }
                 }
@@ -333,7 +360,6 @@ fun HomeScreen(
                     .padding(horizontal = 24.dp, vertical = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                // --- Target format section ---
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         stringResource(R.string.home_target_format),
@@ -355,7 +381,6 @@ fun HomeScreen(
                         }
                     }
                 }
-                // --- Bitrate section (fixed options: 128k / 192k / 320k) ---
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         stringResource(R.string.home_bitrate),

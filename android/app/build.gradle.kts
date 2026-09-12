@@ -68,12 +68,11 @@ dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.10.00")
     implementation(composeBom)
 
-    // ffmpeg-kit-full-gpl 6.0-2.LTS — fetched by android/scripts/fetch-ffmpeg-kit.sh, gitignored.
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
-    // ffmpeg-kit AAR has a compile-time dep on smart-exception-java (referenced by
-    // FFmpegKitConfig.<clinit>). fileTree(*.aar) skips POM resolution, so we must
-    // declare it explicitly — otherwise every ffmpeg call dies with
-    // NoClassDefFoundError: com/arthenica/smartexception/java/Exceptions.
+    // Using Maven dependency instead of local AAR to resolve the "Unresolved reference" issue.
+    // The repository is already configured in settings.gradle.kts (Appodeal mirror).
+    implementation("com.arthenica:ffmpeg-kit-full-gpl:6.0-2.LTS")
+
+    // ffmpeg-kit AAR has a compile-time dep on smart-exception-java.
     implementation("com.arthenica:smart-exception-java:0.2.1")
 
     implementation("androidx.core:core-ktx:1.13.1")

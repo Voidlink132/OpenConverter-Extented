@@ -32,6 +32,8 @@ data class FileEntry(
     val state: FileState = FileState.Pending,
     val percent: Int = 0,
     val error: String? = null,
+    val isSelected: Boolean = true,
+    val source: String? = null,
 )
 
 data class HomeUiState(
@@ -89,6 +91,20 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(files = entries) }
     }
 
+    fun toggleSelection(uri: String, selected: Boolean) {
+        _state.update { s ->
+            s.copy(files = s.files.map {
+                if (it.uri == uri) it.copy(isSelected = selected) else it
+            })
+        }
+    }
+
+    fun toggleAllSelection(selected: Boolean) {
+        _state.update { s ->
+            s.copy(files = s.files.map { it.copy(isSelected = selected) })
+        }
+    }
+
     fun toggleAutoFetch(enabled: Boolean) {
         _state.update { it.copy(autoFetchEnabled = enabled) }
         if (enabled) {
@@ -100,32 +116,34 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 if (!Environment.isExternalStorageManager()) {
-                    // We can't request activity from ViewModel easily,
-                    // but the UI will handle the switch state and permission check.
                     return@launch
                 }
             }
 
-            val paths = listOf(
-                "/storage/emulated/0/Download/netease/cloudmusic/Music/",
-                "/storage/emulated/0/Download/kgmusic/",
-                "/storage/emulated/0/Music/qqmusic/"
+            val scanConfigs = listOf(
+                ScanConfig("/storage/emulated/0/Download/netease/cloudmusic/Music/", "网易云音乐"),
+                ScanConfig("/storage/emulated/0/Download/kgmusic/", "酷狗音乐"),
+                ScanConfig("/storage/emulated/0/Download/kgmusic/download/", "酷狗音乐"),
+                ScanConfig("/storage/emulated/0/Download/kgmusic/download/kgmusic/", "酷狗音乐"),
+                ScanConfig("/storage/emulated/0/Music/qqmusic/", "QQ音乐")
             )
+
             val audioExtensions = setOf(
                 "mp3", "flac", "wav", "m4a", "ogg", "aac",
                 "ncm", "kwm", "kgm", "kgma", "vpr", "kgg", "mgg", "mgg1", "bkc"
             )
 
             val newEntries = mutableListOf<FileEntry>()
-            paths.forEach { path ->
-                val dir = File(path)
+            scanConfigs.forEach { config ->
+                val dir = File(config.path)
                 if (dir.exists() && dir.isDirectory) {
                     dir.listFiles()?.forEach { file ->
                         if (file.isFile && file.extension.lowercase() in audioExtensions) {
                             newEntries.add(FileEntry(
                                 uri = Uri.fromFile(file).toString(),
                                 displayName = file.name,
-                                sizeBytes = file.length()
+                                sizeBytes = file.length(),
+                                source = config.label
                             ))
                         }
                     }
@@ -142,6 +160,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    data class ScanConfig(val path: String, val label: String)
+
     fun setOutputFolder(uri: Uri) {
         val ctx = getApplication<Application>()
         val takeResult = runCatching {
@@ -154,16 +174,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(
                 outputFolderUri = null,
                 outputFolderName = null,
-                folderError = "Android refused permission for this folder. Pick another (try Downloads or create a new folder in My Files).",
+                folderError = "Android refused permission for this folder. Pick another.",
             ) }
             return
         }
         val name = runCatching {
             DocumentsContract.getTreeDocumentId(uri).substringAfterLast(':').ifBlank { uri.lastPathSegment }
         }.getOrNull() ?: "folder"
-        // Write-probe: try creating + deleting a 0-byte file via the SAF tree.
-        // Catches the Android 14 "can't use this folder" case where the
-        // tree-URI persists but the underlying provider refuses creates.
         val writeProbe = runCatching {
             val treeDocUri = DocumentsContract.buildDocumentUriUsingTree(
                 uri, DocumentsContract.getTreeDocumentId(uri),
@@ -176,7 +193,6 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             DocumentsContract.deleteDocument(ctx.contentResolver, probeUri)
         }
         if (writeProbe.isFailure) {
-            // Roll back the permission so the user can re-pick freely.
             runCatching {
                 ctx.contentResolver.releasePersistableUriPermission(
                     uri,
@@ -186,7 +202,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(
                 outputFolderUri = null,
                 outputFolderName = null,
-                folderError = "Can't write to '$name'. Pick a folder you can create files in (Downloads, Documents, or a new folder).",
+                folderError = "Can't write to '$name'. Pick a folder you can create files in.",
             ) }
             return
         }
@@ -204,13 +220,22 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun start(context: Context) {
         val s = _state.value
-        if (s.files.isEmpty() || s.outputFolderUri == null || s.running) return
+        val selectedFiles = s.files.filter { it.isSelected }
+        if (selectedFiles.isEmpty() || s.outputFolderUri == null || s.running) return
         if (s.folderError != null) return
-        _state.update { it.copy(running = true, files = it.files.map { f -> f.copy(state = FileState.Pending, percent = 0, error = null) }) }
+        
+        _state.update { it.copy(
+            running = true, 
+            files = it.files.map { f -> 
+                if (f.isSelected) f.copy(state = FileState.Pending, percent = 0, error = null) 
+                else f 
+            }
+        ) }
+
         val intent = ConversionService.makeIntent(
             context,
-            inputs = s.files.map { it.uri },
-            names  = s.files.map { it.displayName },
+            inputs = selectedFiles.map { it.uri },
+            names  = selectedFiles.map { it.displayName },
             folder = s.outputFolderUri,
             target = s.targetFormat,
             bitrate = s.bitrate,
@@ -221,7 +246,10 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     fun retryFailed(context: Context) {
         val retries = retryEntries(_state.value.files)
         if (retries.isEmpty()) return
-        _state.update { it.copy(files = retries) }
+        _state.update { it.copy(files = it.files.map { f ->
+            if (f.state == FileState.Failed) f.copy(state = FileState.Pending, percent = 0, error = null)
+            else f
+        }) }
         start(context)
     }
 
@@ -244,11 +272,27 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private fun onEvent(ev: ProgressEvent) {
         _state.update { s ->
             val files = s.files.toMutableList()
+            val selectedFiles = s.files.filter { it.isSelected }
+            
+            val originalIndex = if (ev is ProgressEvent.Progress || ev is ProgressEvent.Start || ev is ProgressEvent.Done || ev is ProgressEvent.Failed) {
+                val indexInSelected = when(ev) {
+                    is ProgressEvent.Start -> ev.index
+                    is ProgressEvent.Progress -> ev.index
+                    is ProgressEvent.Done -> ev.index
+                    is ProgressEvent.Failed -> ev.index
+                    else -> -1
+                }
+                if (indexInSelected in selectedFiles.indices) {
+                    val targetUri = selectedFiles[indexInSelected].uri
+                    files.indexOfFirst { it.uri == targetUri }
+                } else -1
+            } else -1
+
             when (ev) {
-                is ProgressEvent.Start    -> if (ev.index in files.indices) files[ev.index] = files[ev.index].copy(state = FileState.Running, percent = 0)
-                is ProgressEvent.Progress -> if (ev.index in files.indices) files[ev.index] = files[ev.index].copy(state = FileState.Running, percent = ev.percent)
-                is ProgressEvent.Done     -> if (ev.index in files.indices) files[ev.index] = files[ev.index].copy(state = FileState.Done, percent = 100)
-                is ProgressEvent.Failed   -> if (ev.index in files.indices) files[ev.index] = files[ev.index].copy(state = FileState.Failed, error = ev.message)
+                is ProgressEvent.Start    -> if (originalIndex != -1) files[originalIndex] = files[originalIndex].copy(state = FileState.Running, percent = 0)
+                is ProgressEvent.Progress -> if (originalIndex != -1) files[originalIndex] = files[originalIndex].copy(state = FileState.Running, percent = ev.percent)
+                is ProgressEvent.Done     -> if (originalIndex != -1) files[originalIndex] = files[originalIndex].copy(state = FileState.Done, percent = 100)
+                is ProgressEvent.Failed   -> if (originalIndex != -1) files[originalIndex] = files[originalIndex].copy(state = FileState.Failed, error = ev.message)
                 ProgressEvent.BatchDone   -> return@update s.copy(running = false, files = files)
             }
             s.copy(files = files)
@@ -259,7 +303,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         fun mapSize(raw: Long): Long = if (raw > 0) raw else -1L
 
         fun retryEntries(files: List<FileEntry>): List<FileEntry> = files
-            .filter { it.state == FileState.Failed }
+            .filter { it.state == FileState.Failed && it.isSelected }
             .map { it.copy(state = FileState.Pending, percent = 0, error = null) }
     }
 }
