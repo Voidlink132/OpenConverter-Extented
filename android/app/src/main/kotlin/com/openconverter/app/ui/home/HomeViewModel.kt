@@ -125,7 +125,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 ScanConfig("/storage/emulated/0/Download/kgmusic/", "酷狗音乐"),
                 ScanConfig("/storage/emulated/0/Download/kgmusic/download/", "酷狗音乐"),
                 ScanConfig("/storage/emulated/0/Download/kgmusic/download/kgmusic/", "酷狗音乐"),
-                ScanConfig("/storage/emulated/0/Music/qqmusic/", "QQ音乐")
+                ScanConfig("/storage/emulated/0/Music/qqmusic/song/", "QQ音乐")
             )
 
             val audioExtensions = setOf(
