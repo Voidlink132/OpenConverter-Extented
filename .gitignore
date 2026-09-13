@@ -79,3 +79,20 @@ promo-video/
 
 # Codex config
 .codex/
+
+# 编译生成的文件
+/build/
+/app/build/
+/captures/
+.externalNativeBuild
+.cxx/
+*.apk
+*.ap_
+*.dex
+*.class
+
+# Gradle缓存
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
